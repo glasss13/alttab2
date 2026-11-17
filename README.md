@@ -1,5 +1,3 @@
-<img src="assets/icon.svg" width="64" height="64" alt="">
+super fast, minimal, and slopped alt tab alternative for mac
 
-# alttab2
-
-Created in [T3 Code](https://t3.codes).
+This project is not actively maintained. It's intended to meet exactly my needs.
