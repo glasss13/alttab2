@@ -12,5 +12,5 @@
 <key>LSUIElement</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSHighResolutionCapable</key><true/>
-<key>NSScreenCaptureUsageDescription</key><string>AltTab2 uses window images to show cached thumbnails in the switcher.</string>
+<key>NSScreenCaptureUsageDescription</key><string>Captures window thumbnails for the switcher.</string>
 </dict></plist>

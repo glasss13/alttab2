@@ -67,9 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let ax = AXIsProcessTrusted()
         let screen = CGPreflightScreenCaptureAccess()
         message?.stringValue =
-            ax && screen
-            ? "Ready. Quit the original AltTab before using Cmd+Tab here. Close this window to keep AltTab2 running."
-            : "\(ax ? "✓" : "○") Accessibility — switch windows and read the keyboard\n\(screen ? "✓" : "○") Screen Recording — show window thumbnails"
+            "Accessibility: \(ax ? "Granted" : "Required")\nScreen Recording: \(screen ? "Granted" : "Required")"
         if ax && screen {
             retryTimer?.invalidate()
             retryTimer = nil
@@ -78,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func makeSetup() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 530, height: 440),
+            contentRect: NSRect(x: 0, y: 0, width: 490, height: 240),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "AltTab2"
         window.delegate = self
@@ -89,13 +87,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         stack.alignment = .leading
         stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
-        let heading = NSTextField(labelWithString: "Your windows. Instantly.")
-        heading.font = .systemFont(ofSize: 25, weight: .semibold)
-        let description = NSTextField(
-            wrappingLabelWithString:
-                "Tap ⌘ Tab to switch back. Hold ⌘ to see your windows. Use Tab or the arrow keys to choose, then release ⌘."
-        )
-        description.font = .systemFont(ofSize: 13)
         let status = NSTextField(wrappingLabelWithString: "")
         status.font = .systemFont(ofSize: 12)
         message = status
@@ -110,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let license = NSButton(title: "License & attribution…", target: self, action: #selector(showLicense))
         let actions = NSStackView(views: [license, quit])
         actions.spacing = 10
-        for view in [heading, description, status, permissions, login, actions] { stack.addArrangedSubview(view) }
+        for view in [status, permissions, login, actions] { stack.addArrangedSubview(view) }
         window.contentView!.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 28),
