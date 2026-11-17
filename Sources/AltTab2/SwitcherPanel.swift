@@ -9,6 +9,7 @@ final class SwitcherPanel: NSPanel {
     private let scroll = NSScrollView()
     private var pool: [TileView] = []
     private var tiles: [WindowID: TileView] = [:]
+    private var badges: [String: String] = [:]
     private var selected: WindowID?
     private var layoutSignature = ""
     private(set) var columns = 1
@@ -84,6 +85,7 @@ final class SwitcherPanel: NSPanel {
                 x: CGFloat(index % columns) * (tileWidth + gap) + 2,
                 y: CGFloat(index / columns) * (tileHeight + gap) + 2, width: tileWidth, height: tileHeight)
             tile.bind(record, image: thumbnail(record.id))
+            tile.setBadge(record.appURL.flatMap { badges[$0.standardizedFileURL.path] })
             tiles[record.id] = tile
         }
         canvas.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
@@ -103,6 +105,11 @@ final class SwitcherPanel: NSPanel {
     func updateImage(_ id: WindowID, _ image: CGImage) { tiles[id]?.setImage(image) }
     func evictImage(_ id: WindowID) { tiles[id]?.removeImage() }
 
+    func updateBadges(_ labels: [String: String]) {
+        badges = labels
+        for tile in tiles.values { tile.updateBadge(labels) }
+    }
+
     func present(selected id: WindowID?) {
         // Refresh the highlight even if a tile was rebound since the previous gesture.
         selected = nil
@@ -120,6 +127,7 @@ private final class TileView: NSView {
     private let preview = CALayer()
     private let fallback = NSImageView()
     private let icon = NSImageView()
+    private let badge = NSTextField(labelWithString: "")
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(labelWithString: "")
     private var buttons: [NSButton] = []
@@ -141,9 +149,20 @@ private final class TileView: NSView {
         preview.cornerRadius = 7
         preview.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
         layer?.addSublayer(preview)
-        for view in [fallback, icon, title, subtitle] { addSubview(view) }
+        for view in [fallback, icon, badge, title, subtitle] { addSubview(view) }
         fallback.imageScaling = .scaleProportionallyUpOrDown
         icon.imageScaling = .scaleProportionallyUpOrDown
+        badge.font = .monospacedDigitSystemFont(ofSize: 10, weight: .bold)
+        badge.textColor = .white
+        badge.alignment = .center
+        badge.maximumNumberOfLines = 1
+        badge.lineBreakMode = .byTruncatingTail
+        badge.wantsLayer = true
+        badge.layer?.backgroundColor = NSColor.systemRed.cgColor
+        badge.layer?.cornerRadius = 8
+        badge.layer?.masksToBounds = true
+        badge.isHidden = true
+        badge.setAccessibilityElement(false)
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         title.lineBreakMode = .byTruncatingTail
         title.maximumNumberOfLines = 1
@@ -193,15 +212,30 @@ private final class TileView: NSView {
         fallback.isHidden = hasThumbnail
         buttons[0].isEnabled = next.bundleID != "com.apple.finder"
         for button in buttons.dropFirst() { button.isEnabled = next.element != nil }
-        setAccessibilityLabel("\(next.appName), \(next.title)")
         layoutTile()
         setSelected(isSelected)
+    }
+
+    func updateBadge(_ labels: [String: String]) {
+        setBadge(record?.appURL.flatMap { labels[$0.standardizedFileURL.path] })
+    }
+
+    func setBadge(_ label: String?) {
+        badge.stringValue = label ?? ""
+        badge.isHidden = label == nil
+        badge.toolTip = label.map { "Dock badge: \($0)" }
+        if let record {
+            let status = label.map { ", Dock badge: \($0)" } ?? ""
+            setAccessibilityLabel("\(record.appName), \(record.title)\(status)")
+        }
+        layoutTile()
     }
 
     func clear() {
         preview.contents = nil
         fallback.image = nil
         icon.image = nil
+        setBadge(nil)
         record = nil
         hasThumbnail = false
     }
@@ -241,8 +275,14 @@ private final class TileView: NSView {
         CATransaction.commit()
         fallback.frame = NSRect(x: bounds.midX - 28, y: 52, width: 56, height: 56)
         icon.frame = NSRect(x: 12, y: 168, width: 22, height: 22)
-        title.frame = NSRect(x: 42, y: 163, width: bounds.width - 54, height: 17)
-        subtitle.frame = NSRect(x: 42, y: 181, width: bounds.width - 54, height: 14)
+        var textX: CGFloat = 42
+        if !badge.isHidden {
+            let badgeWidth = min(52, max(18, ceil(badge.intrinsicContentSize.width) + 8))
+            badge.frame = NSRect(x: 38, y: 171, width: badgeWidth, height: 16)
+            textX = badge.frame.maxX + 6
+        }
+        title.frame = NSRect(x: textX, y: 163, width: bounds.width - textX - 12, height: 17)
+        subtitle.frame = NSRect(x: textX, y: 181, width: bounds.width - textX - 12, height: 14)
         for (index, button) in buttons.enumerated() {
             button.frame = NSRect(x: 12 + CGFloat(index) * 27, y: 12, width: 22, height: 22)
         }

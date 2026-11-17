@@ -6,6 +6,7 @@ final class Controller {
     let keyboard = Keyboard()
     let focus = FocusController()
     let panel = SwitcherPanel()
+    private let dockBadges = DockBadges()
     private var session = SwitchSession()
     private var cachedOrder: [WindowID] = []
     private var preparedOrder: [WindowID] = []
@@ -60,6 +61,8 @@ final class Controller {
             forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.cancel() }
         store.start()
+        dockBadges.onChange = { [weak self] labels in self?.panel.updateBadges(labels) }
+        dockBadges.start()
         keyboard.start()
     }
 
@@ -111,6 +114,7 @@ final class Controller {
     }
 
     private func show() {
+        dockBadges.refresh()
         if preparedOrder != session.items { prepare(session.items) }
         panel.present(selected: session.selected)
         DispatchQueue.main.async { [weak self] in
