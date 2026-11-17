@@ -10,7 +10,7 @@ cask "alttab2" do
   desc "Keyboard-driven window switcher"
   homepage "https://github.com/glasss13/alttab2"
 
-  depends_on macos: ">= :tahoe"
+  depends_on macos: :tahoe
 
   app "AltTab2.app"
 end
