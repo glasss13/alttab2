@@ -64,9 +64,9 @@ final class Controller {
 
     private func input(_ action: InputAction) {
         switch action {
-        case .tab(let direction):
+        case .tab(let direction, let isRepeat):
             if session.active {
-                session.step(direction)
+                session.step(direction, wrap: !isRepeat)
                 panel.highlight(session.selected)
             } else {
                 session.begin(cachedOrder, visible: store.visibleWindows(in: cachedOrder), current: store.current)

@@ -29,9 +29,14 @@ struct SwitchSession {
         }
     }
 
-    mutating func step(_ delta: Int) {
+    mutating func step(_ delta: Int, wrap: Bool = true) {
         guard active, !items.isEmpty else { return }
-        selectedIndex = ((selectedIndex + delta) % items.count + items.count) % items.count
+        let next = selectedIndex + delta
+        if wrap {
+            selectedIndex = (next % items.count + items.count) % items.count
+        } else {
+            selectedIndex = min(max(next, 0), items.count - 1)
+        }
     }
 
     mutating func select(_ id: WindowID) {

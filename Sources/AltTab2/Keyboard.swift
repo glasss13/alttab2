@@ -1,7 +1,7 @@
 import AppKit
 
 enum InputAction {
-    case tab(Int)
+    case tab(Int, isRepeat: Bool)
     case arrow(Int)
     case selectedAction(WindowAction)
     case commit, cancel
@@ -79,7 +79,8 @@ final class Keyboard {
             if code == 48, command, !event.flags.contains(.maskAlternate), !event.flags.contains(.maskControl) {
                 active = true
                 swallowed.insert(code)
-                send(.tab(event.flags.contains(.maskShift) ? -1 : 1))
+                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                send(.tab(event.flags.contains(.maskShift) ? -1 : 1, isRepeat: isRepeat))
                 return nil
             }
             if active {
