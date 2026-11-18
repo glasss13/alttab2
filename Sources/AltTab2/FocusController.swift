@@ -19,7 +19,6 @@ final class FocusController {
     private var latest: WindowRecord?
     private var requestedAt: Double = 0
     var onVerified: ((WindowID, Bool) -> Void)?
-    var onAction: ((pid_t) -> Void)?
 
     func focus(_ record: WindowRecord) {
         lock.lock()
@@ -101,28 +100,30 @@ final class FocusController {
         }
     }
 
-    func act(_ action: WindowAction, on record: WindowRecord) {
-        actions.addOperation { [weak self] in
-            if action == .quit {
-                if record.bundleID != "com.apple.finder" {
-                    NSRunningApplication(processIdentifier: record.id.pid)?.terminate()
+    func act(_ action: WindowAction, on record: WindowRecord, completion: @escaping (Bool) -> Void) {
+        actions.addOperation {
+            let accepted: Bool
+            switch action {
+            case .quit:
+                accepted = record.bundleID != "com.apple.finder"
+                    && NSRunningApplication(processIdentifier: record.id.pid)?.terminate() == true
+            case .close:
+                if let element = record.element, let close = axElement(element, kAXCloseButtonAttribute) {
+                    accepted = AXUIElementPerformAction(close, kAXPressAction as CFString) == .success
+                } else {
+                    accepted = false
                 }
-            } else if let element = record.element {
-                switch action {
-                case .close:
-                    if let close = axElement(element, kAXCloseButtonAttribute) {
-                        AXUIElementPerformAction(close, kAXPressAction as CFString)
-                    }
-                case .minimize:
-                    AXUIElementSetAttributeValue(
-                        element, kAXMinimizedAttribute as CFString, record.minimized ? kCFBooleanFalse : kCFBooleanTrue)
-                case .fullscreen:
-                    AXUIElementSetAttributeValue(
-                        element, "AXFullScreen" as CFString, record.fullscreen ? kCFBooleanFalse : kCFBooleanTrue)
-                case .quit: break
+            case .minimize, .fullscreen:
+                if let element = record.element {
+                    let attribute = action == .minimize ? kAXMinimizedAttribute : "AXFullScreen"
+                    let enabled = action == .minimize ? record.minimized : record.fullscreen
+                    accepted = AXUIElementSetAttributeValue(
+                        element, attribute as CFString, enabled ? kCFBooleanFalse : kCFBooleanTrue) == .success
+                } else {
+                    accepted = false
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self?.onAction?(record.id.pid) }
+            DispatchQueue.main.async { completion(accepted) }
         }
     }
 }

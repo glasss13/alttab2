@@ -40,16 +40,12 @@ final class Controller {
         focus.onVerified = { [weak self] id, success in
             if success { self?.store.observeFocus(id) } else { self?.store.rejectFocus() }
         }
-        focus.onAction = { [weak self] pid in self?.store.refresh(pid) }
         panel.onSelect = { [weak self] id in
             self?.session.select(id)
             self?.commit()
         }
         panel.onAction = { [weak self] action, id in
-            guard let self else { return }
-            self.session.select(id)
-            self.panel.highlight(id)
-            self.perform(action, on: id)
+            self?.perform(action, on: id)
         }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -73,7 +69,7 @@ final class Controller {
                 session.step(direction)
                 panel.highlight(session.selected)
             } else {
-                session.begin(cachedOrder, current: store.current)
+                session.begin(cachedOrder, visible: store.visibleWindows(in: cachedOrder), current: store.current)
                 guard session.active else { return }
                 if direction < 0 { session.step(-2) }
                 sessionGeneration &+= 1
@@ -106,8 +102,23 @@ final class Controller {
 
     private func perform(_ action: WindowAction, on id: WindowID) {
         guard let record = store.records[id] else { return }
-        if action == .close { store.expectRemoval(id) }
-        focus.act(action, on: record)
+        let finishRemoval: ((Bool) -> Void)?
+        switch action {
+        case .quit:
+            guard record.bundleID != "com.apple.finder" else { return }
+            finishRemoval = store.expectRemoval(.app(id.pid))
+        case .close:
+            guard record.element != nil else { return }
+            finishRemoval = store.expectRemoval(.window(id))
+        case .fullscreen, .minimize:
+            finishRemoval = nil
+        }
+        focus.act(action, on: record) { [weak self] accepted in
+            finishRemoval?(accepted)
+            if accepted {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.store.refresh(id.pid) }
+            }
+        }
         if action == .fullscreen || action == .minimize {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in self?.store.refresh(id.pid) }
         }
@@ -153,9 +164,15 @@ final class Controller {
         cachedOrder = store.ordered
         thumbnails.retain(Set(store.records.keys))
         if session.active {
-            session.reconcile(available: Set(cachedOrder))
+            let previous = session.items
+            session.reconcile(available: Set(store.visibleWindows(in: cachedOrder)))
             if !session.active {
                 cancel()
+                return
+            }
+            if session.items != previous {
+                prepare(session.items)
+                panel.highlight(session.selected)
                 return
             }
         }
@@ -167,7 +184,7 @@ final class Controller {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.warmWork = nil
-            let order = self.session.active ? self.session.items : self.cachedOrder
+            let order = self.session.active ? self.session.items : self.store.visibleWindows(in: self.cachedOrder)
             self.prepare(order)
             if self.session.active {
                 self.panel.highlight(self.session.selected)

@@ -85,6 +85,7 @@ final class SwitcherPanel: NSPanel {
                 x: CGFloat(index % columns) * (tileWidth + gap) + 2,
                 y: CGFloat(index / columns) * (tileHeight + gap) + 2, width: tileWidth, height: tileHeight)
             tile.bind(record, image: thumbnail(record.id))
+            tile.setSelected(record.id == selected)
             tile.setBadge(record.appURL.flatMap { badges[$0.standardizedFileURL.path] })
             tiles[record.id] = tile
         }
@@ -130,7 +131,7 @@ private final class TileView: NSView {
     private let badge = NSTextField(labelWithString: "")
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(labelWithString: "")
-    private var buttons: [NSButton] = []
+    private var buttons: [TrafficLightButton] = []
     private var tracking: NSTrackingArea?
     private var record: WindowRecord?
     private var isSelected = false
@@ -141,6 +142,7 @@ private final class TileView: NSView {
 
     init() {
         super.init(frame: .zero)
+        clipsToBounds = true
         wantsLayer = true
         layer?.cornerRadius = 12
         layer?.borderWidth = 2
@@ -169,25 +171,16 @@ private final class TileView: NSView {
         subtitle.font = .systemFont(ofSize: 10)
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingTail
-        let definitions: [(String, String, NSColor)] = [
-            ("power", "Quit app", .systemGray), ("xmark", "Close window", .systemRed),
-            ("minus", "Minimize or restore", .systemYellow),
-            ("arrow.up.left.and.arrow.down.right", "Enter or exit fullscreen", .systemGreen),
+        let definitions: [(WindowAction, String, String, NSColor)] = [
+            (.quit, "power", "Quit app", .systemGray),
+            (.close, "xmark", "Close window", .systemRed),
+            (.minimize, "minus", "Minimize or restore", .systemYellow),
+            (.fullscreen, "arrow.up.left.and.arrow.down.right", "Enter or exit fullscreen", .systemGreen),
         ]
-        for (index, definition) in definitions.enumerated() {
-            let button = NSButton(
-                image: NSImage(systemSymbolName: definition.0, accessibilityDescription: definition.1)!, target: self,
-                action: #selector(action(_:)))
-            button.tag = index
-            button.isBordered = false
-            button.contentTintColor = .black
-            button.wantsLayer = true
-            button.layer?.backgroundColor = definition.2.cgColor
-            button.layer?.cornerRadius = 10
-            button.imageScaling = .scaleProportionallyDown
-            button.toolTip = definition.1
-            button.setAccessibilityLabel(definition.1)
-            button.isHidden = true
+        for (action, symbol, label, color) in definitions {
+            let button = TrafficLightButton(action: action, symbol: symbol, label: label, color: color)
+            button.target = self
+            button.action = #selector(self.action(_:))
             addSubview(button)
             buttons.append(button)
         }
@@ -210,10 +203,10 @@ private final class TileView: NSView {
         preview.contents = image
         hasThumbnail = image != nil
         fallback.isHidden = hasThumbnail
-        buttons[0].isEnabled = next.bundleID != "com.apple.finder"
-        for button in buttons.dropFirst() { button.isEnabled = next.element != nil }
+        for button in buttons {
+            button.isEnabled = button.windowAction == .quit ? next.bundleID != "com.apple.finder" : next.element != nil
+        }
         layoutTile()
-        setSelected(isSelected)
     }
 
     func updateBadge(_ labels: [String: String]) {
@@ -237,6 +230,7 @@ private final class TileView: NSView {
         icon.image = nil
         setBadge(nil)
         record = nil
+        hovered = false
         hasThumbnail = false
     }
 
@@ -284,7 +278,7 @@ private final class TileView: NSView {
         title.frame = NSRect(x: textX, y: 163, width: bounds.width - textX - 12, height: 17)
         subtitle.frame = NSRect(x: textX, y: 181, width: bounds.width - textX - 12, height: 14)
         for (index, button) in buttons.enumerated() {
-            button.frame = NSRect(x: 12 + CGFloat(index) * 27, y: 12, width: 22, height: 22)
+            button.frame = NSRect(x: 12 + CGFloat(index) * 20, y: 12, width: 20, height: 20)
         }
     }
 
@@ -312,8 +306,80 @@ private final class TileView: NSView {
         return false
     }
 
-    @objc private func action(_ sender: NSButton) {
+    @objc private func action(_ sender: TrafficLightButton) {
         guard let record else { return }
-        onAction?([.quit, .close, .minimize, .fullscreen][sender.tag], record.id)
+        onAction?(sender.windowAction, record.id)
+    }
+}
+
+private final class TrafficLightButton: NSButton {
+    let windowAction: WindowAction
+    private let color: NSColor
+    private var tracking: NSTrackingArea?
+
+    init(action: WindowAction, symbol: String, label: String, color: NSColor) {
+        windowAction = action
+        self.color = color
+        super.init(frame: .zero)
+        clipsToBounds = true
+        isBordered = false
+        title = ""
+        let configuration = NSImage.SymbolConfiguration(pointSize: 8, weight: .bold)
+            .applying(.init(paletteColors: [.black.withAlphaComponent(0.76)]))
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        toolTip = label
+        setAccessibilityLabel(label)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(
+            rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if isEnabled { addCursorRect(visibleRect, cursor: .pointingHand) }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        needsDisplay = true
+        if isEnabled { NSCursor.pointingHand.set() }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        needsDisplay = true
+        if isEnabled { NSCursor.arrow.set() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let hovered = window.map { visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        let pressed = cell?.isHighlighted == true
+        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 3, dy: 3))
+        var fill = color
+        if !isEnabled {
+            fill = .disabledControlTextColor
+        } else if pressed {
+            fill = color.blended(withFraction: 0.25, of: .black) ?? color
+        } else if hovered {
+            fill = color.blended(withFraction: 0.25, of: .white) ?? color
+        }
+        fill.setFill()
+        circle.fill()
+        NSColor.black.withAlphaComponent(0.22).setStroke()
+        circle.lineWidth = 0.75
+        circle.stroke()
+        if isEnabled, hovered || pressed, let image {
+            let rect = NSRect(
+                x: bounds.midX - image.size.width / 2, y: bounds.midY - image.size.height / 2,
+                width: image.size.width, height: image.size.height)
+            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
     }
 }

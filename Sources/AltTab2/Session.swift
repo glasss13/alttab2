@@ -11,6 +11,7 @@ struct WindowID: Hashable {
 
 // Keep the order stable until Command is released.
 struct SwitchSession {
+    private var initialOrder: [WindowID] = []
     private(set) var items: [WindowID] = []
     private(set) var selectedIndex = 0
     private(set) var active = false
@@ -18,8 +19,9 @@ struct SwitchSession {
 
     init() {}
 
-    mutating func begin(_ order: [WindowID], current: WindowID?) {
-        items = order
+    mutating func begin(_ order: [WindowID], visible: [WindowID], current: WindowID?) {
+        initialOrder = order
+        items = visible
         active = !items.isEmpty
         selectedIndex = 0
         if let current, let index = items.firstIndex(of: current), items.count > 1 {
@@ -39,7 +41,7 @@ struct SwitchSession {
     mutating func reconcile(available: Set<WindowID>) {
         let old = selected
         let oldIndex = selectedIndex
-        items.removeAll { !available.contains($0) }
+        items = initialOrder.filter { available.contains($0) }
         selectedIndex = old.flatMap { items.firstIndex(of: $0) } ?? min(oldIndex, max(0, items.count - 1))
         if items.isEmpty { active = false }
     }
@@ -47,6 +49,7 @@ struct SwitchSession {
     mutating func end() -> WindowID? {
         let result = active ? selected : nil
         active = false
+        initialOrder = []
         items = []
         return result
     }

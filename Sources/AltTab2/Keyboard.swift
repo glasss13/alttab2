@@ -74,6 +74,8 @@ final class Keyboard {
         } else if type == .keyUp, swallowed.remove(code) != nil {
             return nil
         } else if type == .keyDown {
+            // Closing the last tile can end the session before the action key comes up.
+            if (code == 12 || code == 13), swallowed.contains(code) { return nil }
             if code == 48, command, !event.flags.contains(.maskAlternate), !event.flags.contains(.maskControl) {
                 active = true
                 swallowed.insert(code)
@@ -93,7 +95,7 @@ final class Keyboard {
                     return nil
                 }
                 if code == 12 || code == 13 {
-                    let repeated = event.getIntegerValueField(.keyboardEventAutorepeat) != 0 || swallowed.contains(code)
+                    let repeated = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
                     swallowed.insert(code)
                     if !repeated { send(.selectedAction(code == 13 ? .close : .quit)) }
                     return nil

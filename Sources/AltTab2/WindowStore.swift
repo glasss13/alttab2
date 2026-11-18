@@ -28,6 +28,18 @@ struct WindowRecord {
     var windowless: Bool { id.window == 0 }
 }
 
+enum RemovalTarget: Hashable {
+    case window(WindowID)
+    case app(pid_t)
+
+    var pid: pid_t {
+        switch self {
+        case .window(let id): return id.pid
+        case .app(let pid): return pid
+        }
+    }
+}
+
 private struct AppSnapshot {
     let pid: pid_t
     let windows: [WindowRecord]
@@ -58,7 +70,7 @@ final class WindowStore {
     private var reconcileWork: DispatchWorkItem?
     private var initialPending = Set<pid_t>()
     private var missingSince: [WindowID: Double] = [:]
-    private var expectedRemovals: [WindowID: Double] = [:]
+    private var expectedRemovals: [RemovalTarget: UUID] = [:]
     private lazy var observers = AXObservers { [weak self] pid in
         DispatchQueue.main.async { self?.refresh(pid) }
     }
@@ -113,6 +125,7 @@ final class WindowStore {
         }
         let live = Set(running.map(\.processIdentifier))
         for pid in Set(apps.keys).subtracting(live) {
+            expectedRemovals[.app(pid)] = nil
             apps[pid] = nil
             generations[pid, default: 0] += 1
             records = records.filter { $0.key.pid != pid }
@@ -160,7 +173,35 @@ final class WindowStore {
         recent.rejectPending()
         onChange?()
     }
-    func expectRemoval(_ id: WindowID) { expectedRemovals[id] = ProcessInfo.processInfo.systemUptime + 2 }
+
+    func visibleWindows(in order: [WindowID]) -> [WindowID] {
+        guard !expectedRemovals.isEmpty else { return order }
+        return order.filter { !expectsRemoval($0) }
+    }
+
+    private func expectsRemoval(_ id: WindowID) -> Bool {
+        expectedRemovals[.window(id)] != nil || expectedRemovals[.app(id.pid)] != nil
+    }
+
+    // A successful AX press or termination request can still lead to a save dialog.
+    func expectRemoval(_ target: RemovalTarget) -> (Bool) -> Void {
+        let token = UUID()
+        expectedRemovals[target] = token
+        onChange?()
+        let restore = { [weak self] in
+            guard let self, self.expectedRemovals[target] == token else { return }
+            self.expectedRemovals[target] = nil
+            self.refresh(target.pid)
+            self.onChange?()
+        }
+        return { accepted in
+            if accepted {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: restore)
+            } else {
+                restore()
+            }
+        }
+    }
 
     private func accept(_ snapshot: AppSnapshot, generation: UInt64) {
         inFlight.remove(snapshot.pid)
@@ -174,10 +215,10 @@ final class WindowStore {
             for old in records.values.filter({ $0.id.pid == snapshot.pid }) where !incoming.contains(old.id) {
                 let since = missingSince[old.id] ?? now
                 missingSince[old.id] = since
-                if old.windowless || (expectedRemovals[old.id] ?? 0) > now || now - since >= 0.8 {
+                if old.windowless || expectsRemoval(old.id) || now - since >= 0.8 {
                     records[old.id] = nil
                     missingSince[old.id] = nil
-                    expectedRemovals[old.id] = nil
+                    expectedRemovals[.window(old.id)] = nil
                 } else {
                     retry = true
                 }
