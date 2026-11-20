@@ -68,6 +68,7 @@ final class WindowStore {
     private var apps: [pid_t: NSRunningApplication] = [:]
     private var tokens: [NSObjectProtocol] = []
     private var reconcileWork: DispatchWorkItem?
+    private var orderCheck: DispatchSourceTimer?
     private var initialPending = Set<pid_t>()
     private var missingSince: [WindowID: Double] = [:]
     private var expectedRemovals: [RemovalTarget: UUID] = [:]
@@ -106,6 +107,23 @@ final class WindowStore {
                 else { return }
                 self.refresh(app.processIdentifier)
             })
+        // Some apps silently order out a window without destroying its AX element.
+        // Check the inexpensive window order off-main; only reread affected apps.
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 2, repeating: 2, leeway: .milliseconds(400))
+        timer.setEventHandler { [weak self] in
+            guard let ids = ATCopyOrderedWindowIDs() as? [UInt32] else { return }
+            let ordered = Set(ids)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let missing = self.records.values.filter {
+                    !$0.windowless && !$0.hidden && !$0.minimized && !ordered.contains($0.id.window)
+                }
+                for pid in Set(missing.map { $0.id.pid }) { self.refresh(pid) }
+            }
+        }
+        orderCheck = timer
+        timer.resume()
         reconcile()
     }
 
@@ -272,11 +290,19 @@ final class WindowStore {
         }
         let cgWindows = (ATCopyAllWindowInfo() as? [[String: Any]] ?? [])
             .filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }
-        let liveIDs = Set(cgWindows.compactMap { $0[kCGWindowNumber as String] as? UInt32 })
         var elements = published[0] as? [AXUIElement] ?? []
         for value in published.dropFirst() {
             let ref = value as CFTypeRef
             if CFGetTypeID(ref) == AXUIElementGetTypeID() { elements.append(ref as! AXUIElement) }
+        }
+        // Apps can order a closed window out while keeping its ID and AX element alive.
+        // An offscreen surface can still be a real window on another Space.
+        let offscreen = cgWindows.filter { ($0[kCGWindowIsOnscreen as String] as? Bool) != true }
+        var liveIDs = Set(cgWindows.compactMap { $0[kCGWindowNumber as String] as? UInt32 })
+        if !offscreen.isEmpty {
+            let ordered = Set(ATCopyOrderedWindowIDs() as? [UInt32] ?? elements.map { ATWindowID($0) })
+            let offscreenIDs = offscreen.compactMap { $0[kCGWindowNumber as String] as? UInt32 }
+            liveIDs.subtract(offscreenIDs.filter { !ordered.contains($0) })
         }
         elements += previous.filter { liveIDs.contains($0.id.window) || $0.minimized || app.isHidden }.compactMap(
             \.element)

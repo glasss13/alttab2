@@ -58,10 +58,9 @@ CGWindowID ATWindowID(AXUIElementRef element) {
     return window;
 }
 
-CFArrayRef ATCopyAllWindowInfo(void) {
+static CFArrayRef copySpaceWindowIDs(intptr_t options) {
     loadSymbols();
-    if (!connectionFn || !displaySpacesFn || !windowsFn)
-        return CGWindowListCopyWindowInfo(kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
+    if (!connectionFn || !displaySpacesFn || !windowsFn) return NULL;
     uint32_t connection = connectionFn();
     CFArrayRef displays = displaySpacesFn(connection);
     CFMutableArrayRef ids = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
@@ -79,8 +78,18 @@ CFArrayRef ATCopyAllWindowInfo(void) {
         CFRelease(displays);
     }
     intptr_t set = 0, clear = 0;
-    CFArrayRef wids = CFArrayGetCount(ids) ? windowsFn(connection, 0, ids, 5, &set, &clear) : NULL;
+    CFArrayRef wids = CFArrayGetCount(ids) ? windowsFn(connection, 0, ids, options, &set, &clear) : NULL;
     CFRelease(ids);
+    return wids;
+}
+
+CFArrayRef ATCopyOrderedWindowIDs(void) {
+    // Query the window order on every Space, including inactive fullscreen Spaces.
+    return copySpaceWindowIDs(0);
+}
+
+CFArrayRef ATCopyAllWindowInfo(void) {
+    CFArrayRef wids = copySpaceWindowIDs(5);
     // SkyLight returns CFNumbers; CoreGraphics expects raw CGWindowID values in a
     // callback-free CFArray (the same representation as CGWindowListCreate).
     CFMutableArrayRef rawIDs = CFArrayCreateMutable(NULL, 0, NULL);
