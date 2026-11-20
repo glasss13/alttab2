@@ -1,9 +1,9 @@
 cask "alttab2" do
   arch arm: "arm64", intel: "x86_64"
 
-  version "0.1.2"
-  sha256 arm:   "6500ce1f1f7f46056f52312e423234b069883218f1ccb2f14a0a844625b2f438",
-         intel: "634f500686c47d5fab304d5f4331984b8cc7005e7c9934beddea31c866d3cfd9"
+  version "0.1.3"
+  sha256 arm:   "b6ac77c4fcdad4e4646bd8455213318a6c74776925a628362ca45cbf039d00e1",
+         intel: "795146c37ed87e628aefe68289808e5949a74fdd3f0e1bb4f946f6ebe4218547"
 
   url "https://github.com/glasss13/alttab2/releases/download/v#{version}/AltTab2-#{arch}.zip"
   name "AltTab2"

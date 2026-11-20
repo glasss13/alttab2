@@ -274,6 +274,17 @@ final class WindowStore {
             }.map(\.id))
     }
 
+    private static func isSharingIndicator(_ dialog: AXUIElement) -> Bool {
+        // macOS exposes the sharing indicator as a dialog owned by the sharing app.
+        guard let children = axValue(dialog, kAXChildrenAttribute) as? [AXUIElement],
+            children.count == 1, let button = children.first,
+            axValue(button, kAXRoleAttribute) as? String == kAXButtonRole
+        else { return false }
+        let sharingButton = "WindowSharingSessionButton"
+        return axValue(button, kAXTitleAttribute) as? String == sharingButton
+            || axValue(button, kAXIdentifierAttribute) as? String == sharingButton
+    }
+
     private static func read(_ app: NSRunningApplication, previous: [WindowRecord]) -> AppSnapshot {
         let pid = app.processIdentifier
         let root = AXUIElementCreateApplication(pid)
@@ -348,6 +359,7 @@ final class WindowStore {
             guard role == kAXWindowRole, subrole != kAXSystemDialogSubrole, subrole != kAXFloatingWindowSubrole else {
                 continue
             }
+            if subrole == kAXDialogSubrole && isSharingIndicator(element) { continue }
             let minimized = attrs[3] as? Bool ?? false
             // Inactive native tabs can remain published AXWindows but have no physical
             // surface on any Space. Keep the drawn representative, plus minimized windows.
